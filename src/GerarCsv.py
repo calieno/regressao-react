@@ -2,16 +2,16 @@ import csv
 import random
 
 # Máximos teóricos para normalização
-max_tamanho = 250
+max_tamanho = 350
 max_banheiros = 5
 max_quartos = 6
-max_preco = 2000000
+max_preco = 200000
 
-with open("dados_normalizados100k.csv", "w", newline='') as arquivo:
+with open("dados_normalizados350k.csv", "w", newline='') as arquivo:
     escritor = csv.writer(arquivo)
     escritor.writerow(['tamanho', 'banheiros', 'quartos', 'preco'])
 
-    for _ in range(100000):
+    for _ in range(10000):
         tamanho = random.randint(30, max_tamanho)
         banheiros = random.randint(1, max_banheiros)
         quartos = random.randint(1, max_quartos)

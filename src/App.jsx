@@ -1,23 +1,26 @@
-import React, { useState, useRef } from 'react';
-import * as tf from '@tensorflow/tfjs';
-import Papa from 'papaparse';
-import { Chart } from 'chart.js/auto';
-import './App.css';
+  import React, { useState, useRef } from 'react';
+import * as tf from '@tensorflow/tfjs';        // Biblioteca de Machine Learning
+import Papa from 'papaparse';                  // Leitor de arquivos CSV
+import { Chart } from 'chart.js/auto';         // Biblioteca de gráficos
+import './App.css';                            // Estilo visual da aplicação
 
 function App() {
-  const [data, setData] = useState([]);
-  const [warnings, setWarnings] = useState([]);
-  const [model, setModel] = useState(null);
+  //  Estados principais da aplicação
+  const [data, setData] = useState([]);                   // Dados processados do CSV
+  const [warnings, setWarnings] = useState([]);           // Linhas ignoradas com erro
+  const [model, setModel] = useState(null);               // Modelo treinado (TensorFlow)
   const [message, setMessage] = useState('Selecione um arquivo CSV.');
-  const [input, setInput] = useState({ tamanho: 100, banheiros: 2, quartos: 2 });
-  const [prediction, setPrediction] = useState(null);
-  const [isTrained, setIsTrained] = useState(false);
+  const [input, setInput] = useState({ tamanho: 100, banheiros: 2, quartos: 2 }); // Entrada para previsão
+  const [prediction, setPrediction] = useState(null);     // Resultado da previsão
+  const [isTrained, setIsTrained] = useState(false);      // Estado se o modelo já foi treinado
 
+  //  Referências para os elementos canvas de cada gráfico
   const chartLossRef = useRef(null);
   const chartRealRef = useRef(null);
   const chartResiduoRef = useRef(null);
   const chartM2Ref = useRef(null);
 
+  //  Referências para os objetos Chart.js, para destruir e recriar quando necessário
   const chartLoss = useRef(null);
   const chartReal = useRef(null);
   const chartResiduo = useRef(null);
@@ -26,14 +29,16 @@ function App() {
   const MAX_TAMANHO = 250;
   const MAX_PRECO = 2000000;
 
+  //  Carrega e processa o arquivo CSV
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Resetando estados e gráficos
     setModel(null);
     setPrediction(null);
     setIsTrained(false);
-    setMessage("📂 Lendo e validando CSV...");
+    setMessage("Lendo e validando CSV...");
 
     [chartLoss, chartReal, chartResiduo, chartM2].forEach(ref => {
       if (ref.current) {
@@ -44,6 +49,7 @@ function App() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
+      // Usando PapaParse para extrair os dados
       const parsed = Papa.parse(event.target.result, {
         header: true,
         dynamicTyping: true,
@@ -53,6 +59,7 @@ function App() {
       const registros = [];
       const avisos = [];
 
+      // Validação linha por linha
       parsed.data.forEach((row, index) => {
         const keys = Object.keys(row).map(k => k.trim().toLowerCase());
         const tamanho = row[keys.find(k => k.includes("tamanho"))];
@@ -63,27 +70,31 @@ function App() {
         if ([tamanho, banheiros, quartos, preco].every(v => typeof v === "number")) {
           registros.push({ x: [tamanho, banheiros, quartos], y: preco });
         } else {
-          avisos.push(`❌ Linha ${index + 2} ignorada: ${JSON.stringify(row)}`);
+          avisos.push(`Linha ${index + 2} ignorada: ${JSON.stringify(row)}`);
         }
       });
 
       setData(registros);
       setWarnings(avisos);
-      setMessage(`✅ ${registros.length} válidos | ⚠️ ${avisos.length} ignorados`);
+      setMessage(`${registros.length} válidos |  ${avisos.length} ignorados`);
     };
 
     reader.readAsText(file);
   };
 
+  // Treinamento do modelo de Regressão
   const handleTrainModel = async () => {
-    setMessage("🚀 Treinando modelo...");
-    const xs = tf.tensor2d(data.map(d => d.x));
-    const ys = tf.tensor2d(data.map(d => [d.y]));
+    setMessage("Treinando modelo...");
 
+    const xs = tf.tensor2d(data.map(d => d.x));     // Entradas: tamanho, banheiros, quartos
+    const ys = tf.tensor2d(data.map(d => [d.y]));   // Saída: preço
+
+    //  Definindo o modelo
     const newModel = tf.sequential();
     newModel.add(tf.layers.dense({ inputShape: [3], units: 1 }));
     newModel.compile({ optimizer: tf.train.adam(0.1), loss: 'meanSquaredError' });
 
+    //  Gráfico do erro durante o treinamento
     const ctxLoss = chartLossRef.current.getContext('2d');
     chartLoss.current = new Chart(ctxLoss, {
       type: 'line',
@@ -98,7 +109,7 @@ function App() {
     });
 
     await newModel.fit(xs, ys, {
-      epochs: 100,
+      epochs: 50, //Número de épocas de treinamento
       callbacks: {
         onEpochEnd: (epoch, logs) => {
           chartLoss.current.data.labels.push(epoch + 1);
@@ -110,16 +121,16 @@ function App() {
 
     setModel(newModel);
     setIsTrained(true);
-    setMessage("✅ Modelo treinado com sucesso!");
+    setMessage("Modelo treinado com sucesso!");
 
-    // Espera o DOM renderizar os canvases
+    //  Após treinamento, renderiza os gráficos complementares
     setTimeout(async () => {
       const previsoes = await newModel.predict(xs).array();
       const reais = data.map(d => d.y);
       const previstos = previsoes.map(p => p[0]);
       const residuos = reais.map((v, i) => v - previstos[i]);
 
-      // Real vs Previsto
+      //  Comparativo Real x Previsto
       const ctxReal = chartRealRef.current?.getContext('2d');
       if (ctxReal) {
         chartReal.current = new Chart(ctxReal, {
@@ -127,8 +138,8 @@ function App() {
           data: {
             labels: reais.map((_, i) => i + 1),
             datasets: [
-              { label: 'Valor Real', data: reais, borderColor: '#2196F3', fill: false },
-              { label: 'Valor Previsto', data: previstos, borderColor: '#FF9800', fill: false }
+              { label: 'Valor Real', data: reais, borderColor: '#72bdfaff', fill: false },
+              { label: 'Valor Previsto', data: previstos, borderColor: '#ff0000ff', fill: false }
             ]
           },
           options: {
@@ -151,7 +162,7 @@ function App() {
             datasets: [{
               label: 'Resíduo (Real - Previsto)',
               data: residuos,
-              backgroundColor: '#FFC107'
+              backgroundColor: '#a87f02ff'
             }]
           },
           options: {
@@ -164,7 +175,7 @@ function App() {
         });
       }
 
-      // Gráfico Preço por metro quadrado
+      // Gráfico de Preço por Metro Quadrado
       const desnorm = data.map((d, i) => {
         const tamanho_m2 = d.x[0] * MAX_TAMANHO;
         const preco_real = previstos[i] * MAX_PRECO;
@@ -187,7 +198,7 @@ function App() {
           options: {
             responsive: true,
             plugins: {
-              title: { display: true, text: '📏 Preço por Metro Quadrado' }
+              title: { display: true, text: 'Preço por Metro Quadrado' }
             },
             scales: {
               x: { title: { display: true, text: 'Imóvel' } },
@@ -199,77 +210,123 @@ function App() {
     }, 0);
   };
 
+  // Atualiza campos do formulário de previsão
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setInput(prev => ({ ...prev, [name]: Number(value) }));
+    const nome = e.target.name;
+    const valor = e.target.value;
+
+    // Atualiza o estado com o novo valor
+    setInput((prevInput) => ({
+      ...prevInput,
+      [nome]: Number(valor)
+    }));
   };
 
+  // Realiza a previsão com os dados inseridos
   const handlePredict = () => {
     if (!model) return;
-    //const tensor = tf.tensor2d([[input.tamanho, input.banheiros, input.quartos]]);
+
     const tensor = tf.tensor2d([[
       input.tamanho / MAX_TAMANHO,
       input.banheiros,
       input.quartos
     ]]);
 
-    model.predict(tensor).array().then(res => setPrediction(res[0][0]));
+    model.predict(tensor).array().then((res) => {
+      setPrediction(res[0][0]);
+    });
   };
 
+  // Renderização do App.jsx
   return (
     <div className="App">
-      <h1>🧠 Machine Learning Didático – Avaliação Visual</h1>
+      <h1>Machine Learning – Avaliação Visual</h1>
+
+      {/* Upload do CSV */}
       <input type="file" accept=".csv" onChange={handleFileChange} />
       <p>{message}</p>
 
-      {warnings.length > 0 && <ul>{warnings.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {/* Avisos de dados ignorados */}
+      {warnings.length > 0 && (
+        <ul>
+          {warnings.slice(0, 5).map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+      )}
 
-      {data.length > 0 && !isTrained && <button onClick={handleTrainModel}>📚 Treinar Modelo</button>}
+      {/* Botão de treinamento do modelo */}
+      {data.length > 0 && !isTrained && (
+        <button onClick={handleTrainModel}>Treinar Modelo</button>
+      )}
 
+      {/* Gráficos após carregamento e treinamento */}
       {data.length > 0 && (
-          <div className="charts-container">
-            <div>
-              <h3>📉 Erro durante o Treinamento</h3>
-              <canvas ref={chartLossRef} className="chart"></canvas>
-            </div>
-            <div>
-              <h3>📊 Comparativo: Real x Previsto</h3>
-              <canvas ref={chartRealRef} className="chart"></canvas>
-            </div>
-            <div>
-              <h3>📊 Gráfico de Resíduos</h3>
-              <canvas ref={chartResiduoRef} className="chart"></canvas>
-            </div>
-            <div>
-              <h3>📏 Preço por Metro Quadrado</h3>
-              <canvas ref={chartM2Ref} className="chart"></canvas>
-            </div>
+        <div className="charts-container">
+          <div>
+            <h3>Erro durante o Treinamento</h3>
+            <canvas ref={chartLossRef} className="chart"></canvas>
+          </div>
+          <div>
+            <h3>Comparativo: Real x Previsto</h3>
+            <canvas ref={chartRealRef} className="chart"></canvas>
+          </div>
+          <div>
+            <h3>Gráfico de Resíduos</h3>
+            <canvas ref={chartResiduoRef} className="chart"></canvas>
+          </div>
+          <div>
+            <h3>Preço por Metro Quadrado</h3>
+            <canvas ref={chartM2Ref} className="chart"></canvas>
+          </div>
         </div>
       )}
 
+      {/* Formulário para prever com entrada manual */}
       {isTrained && (
         <div className="prediction-form">
-          <h2>📈 Prever Valor do Imóvel</h2>
+          <h2>Prever Valor do Imóvel</h2>
+
           <label>
             Tamanho (m²):
-            <input type="number" name="tamanho" value={input.tamanho} onChange={handleInputChange} />
+            <input
+              type="number"
+              name="tamanho"
+              value={input.tamanho}
+              onChange={handleInputChange}
+            />
           </label>
+
           <label>
             Banheiros:
-            <input type="number" name="banheiros" value={input.banheiros} onChange={handleInputChange} />
+            <input
+              type="number"
+              name="banheiros"
+              value={input.banheiros}
+              onChange={handleInputChange}
+            />
           </label>
+
           <label>
             Quartos:
-            <input type="number" name="quartos" value={input.quartos} onChange={handleInputChange} />
+            <input
+              type="number"
+              name="quartos"
+              value={input.quartos}
+              onChange={handleInputChange}
+            />
           </label>
-          <button onClick={handlePredict}>🎯 Prever</button>
 
+          <button onClick={handlePredict}> Prever</button>
+
+          {/* Mostra o resultado final da previsão */}
           {prediction !== null && (
             <p>
-              💰 Preço estimado: <strong>
+              Preço estimado:{' '}
+              <strong>
                 {(prediction * MAX_PRECO).toLocaleString('pt-BR', {
                   style: 'currency',
-                  currency: 'BRL'
+                  currency: 'BRL',
                 })}
               </strong>
             </p>
